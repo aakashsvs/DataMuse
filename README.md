@@ -1,9 +1,5 @@
-Here is a ready-to-paste, up-to-date README section for your app.  
-**You can replace your current README.md with this, or merge as needed.**
 
----
-
-# Advanced Role-Based RAG SQL Chatbot
+# DataMuse(Advanced Role-Based RAG SQL Chatbot)
 
 A sophisticated, offline-capable SQL chatbot system with role-based access control, dynamic schema loading, and open-source LLM integration.  
 **Built with Streamlit, SQLite, and SQLCoder.**  
