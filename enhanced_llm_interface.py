@@ -42,6 +42,12 @@ def generate_sql_llm(question, allowed_tables, allowed_columns, data_dict, rag_c
                     for _, row in fk_info.iterrows():
                         fks.append(f"`{row['Column']}` -> `{row['Foreign Key Table']}`.`{row['Foreign Key Column']}`")
                     schema_lines.append(f"  - Foreign Keys: {'; '.join(fks)}")
+                
+                # Add table description if available
+                table_desc = data_dict[data_dict['Table'] == table]['Table Description'].iloc[0] if not data_dict[data_dict['Table'] == table].empty else ""
+                if table_desc:
+                    schema_lines.append(f"  - Description: {table_desc}")
+            
             schema_lines.append("")
 
         schema_context = '\n'.join(schema_lines)
@@ -52,8 +58,10 @@ def generate_sql_llm(question, allowed_tables, allowed_columns, data_dict, rag_c
 ### INSTRUCTIONS
 1.  **Use ONLY the provided schema**: Do not guess or assume any table or column names that are not listed.
 2.  **Join tables correctly**: Use the provided foreign key relationships for JOINS.
-3.  **Use valid SQLite syntax**: The target database is SQLite. Ensure all functions, especially for date and time manipulation, are compatible with it. Avoid functions specific to other SQL dialects.
-4.  **Output ONLY the SQL query**: Do not add any explanations or extra text.
+3.  **Use valid SQLite syntax**: The target database is SQLite. Use SQLite date functions like `strftime('%Y-%m', date_column)` for date filtering.
+4.  **For date filtering**: Use `strftime('%Y-%m', date_column) = strftime('%Y-%m', 'now')` for current month.
+5.  **Output ONLY the SQL query**: Do not add any explanations or extra text.
+6.  **Understand the domain**: Analyze the table and column names to understand what type of data this database contains.
 
 ### DATABASE SCHEMA
 {schema_context}
