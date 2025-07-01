@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import sqlite3
+import hashlib
 
 os.makedirs('data', exist_ok=True)
 DB_PATH = os.path.join('db', 'bank_exchange.db')
@@ -69,78 +70,56 @@ def save_to_db(df):
     # Create role_access table with proper column names
     df.reset_index(names=['role_name'], inplace=True)
     df.to_sql('role_access', conn, if_exists='replace', index=False)
-    
-    # Create a view for easy querying of allowed tables per role
-    conn.execute('DROP VIEW IF EXISTS role_allowed_tables')
-    conn.execute('''
-    CREATE VIEW role_allowed_tables AS
-    WITH RECURSIVE split(role_name, table_name, column_list, rest) AS (
-        SELECT 
-            role_name,
-            table_name,
-            access_value as column_list,
-            substr(access_value, instr(access_value, ',') + 1) as rest
-        FROM (
-            SELECT 
-                role_name,
-                name as table_name,
-                value as access_value
-            FROM role_access
-            CROSS JOIN pragma_table_info('role_access')
-            WHERE name != 'role_name'
-        )
-        UNION ALL
-        SELECT
-            role_name,
-            table_name,
-            CASE 
-                WHEN instr(rest, ',') = 0 THEN rest
-                ELSE substr(rest, 1, instr(rest, ',') - 1)
-            END as column_list,
-            CASE 
-                WHEN instr(rest, ',') = 0 THEN ''
-                ELSE substr(rest, instr(rest, ',') + 1)
-            END as rest
-        FROM split
-        WHERE rest != ''
-    )
-    SELECT DISTINCT
-        role_name as role,
-        table_name,
-        CASE 
-            WHEN column_list = 'ALL' THEN 'ALL'
-            WHEN column_list = '' THEN NULL
-            ELSE column_list
-        END as allowed_columns
-    FROM split
-    WHERE column_list IS NOT NULL AND column_list != ''
-    ''')
     conn.commit()
     conn.close()
 
 def main():
     table_cols = get_tables_and_columns()
     df = build_access_matrix(table_cols)
-    
-    # Save to Excel (keep index for Excel)
     df.to_excel(EXCEL_PATH)
+    save_to_db(df.copy())
     print(f'Role access matrix written to {EXCEL_PATH}')
-    
-    # Save to DB
-    save_to_db(df.copy())  # Use copy to not affect original df
-    print(f'Role access matrix saved to {DB_PATH} in table role_access')
-    
-    print('\nRole-based access summary:')
-    for role in ROLES:
-        print(f'\n{role}:')
-        role_data = df.loc[role]  # Use original df with index
-        accessible_tables = [t for t, access in role_data.items() if str(access).strip()]
-        for table in accessible_tables:
-            access = role_data[table]
-            if access == 'ALL':
-                print(f'  ✓ {table} (all columns)')
-            else:
-                print(f'  ✓ {table} ({access})')
+
+def authenticate(username, password):
+    # Simple authentication for demo
+    if username.lower() in ['teller', 'manager', 'auditor', 'it', 'customer service']:
+        if password == f"{username.lower()}123":
+            return username.title()
+    return None
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def check_user_role(username, db_path):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('SELECT role FROM USERS WHERE username = ?', (username,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else None
+
+def load_role_access():
+    if os.path.exists(EXCEL_PATH):
+        return pd.read_excel(EXCEL_PATH, index_col=0)
+    return pd.DataFrame()
+
+def get_allowed_tables(role, role_access):
+    if role_access is not None and role in role_access.index:
+        allowed = role_access.loc[role]
+        # Get tables with non-empty access
+        return [table for table, access in allowed.items() if str(access).strip()]
+    return []
+
+def get_allowed_columns(role, table, role_access, table_cols):
+    if role_access is not None and role in role_access.index:
+        allowed = role_access.loc[role]
+        val = allowed.get(table, '')
+        if isinstance(val, str):
+            if val.strip().upper() == 'ALL':
+                return table_cols.get(table, [])
+            elif val.strip():
+                return [c.strip() for c in val.split(',') if c.strip()]
+    return []
 
 if __name__ == "__main__":
-    main() 
+    main()
